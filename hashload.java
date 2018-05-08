@@ -1,10 +1,10 @@
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.Arrays;
 
 public class hashload implements dbimpl {
 
@@ -12,10 +12,9 @@ public class hashload implements dbimpl {
 		// TODO Auto-generated method stub
 		hashload load = new hashload();
 		long startTime = System.currentTimeMillis();
-		load.readArguments(new String[]{"4096"});
+		load.readHeap(4096);
 		long endTime = System.currentTimeMillis();
 		System.out.println("Load time: " + (endTime - startTime) + "ms.");
-
 	}
 
 	public void readArguments(String args[]) {
@@ -38,15 +37,15 @@ public class hashload implements dbimpl {
 
 		return isValidInt;
 	}
-	
+
 	public int countRecords(int pageSize, File heapFile) {
-		
+
 		FileInputStream fis = null;
 		int numOfRecords = 0;
 		int recCount = 0;
 		int recOffset = 0;
 		int pageNum = 0;
-		int recordsPerPage = pageSize/RECORD_SIZE;
+		int recordsPerPage = pageSize / RECORD_SIZE;
 		long heapFileSize = heapFile.length();
 		long offset = heapFileSize - pageSize;
 		boolean hasNextRecord = true;
@@ -56,9 +55,9 @@ public class hashload implements dbimpl {
 			fis = new FileInputStream(heapFile);
 			fis.skip(offset);
 			fis.read(bLastPage, 0, pageSize);
-			System.arraycopy(bLastPage, pageSize-EOF_PAGENUM_SIZE, bPageNum, 0, EOF_PAGENUM_SIZE);
+			System.arraycopy(bLastPage, pageSize - EOF_PAGENUM_SIZE, bPageNum, 0, EOF_PAGENUM_SIZE);
 			pageNum = ByteBuffer.wrap(bPageNum).getInt();
-			while(hasNextRecord) {
+			while (hasNextRecord) {
 				try {
 					byte[] bRecord = new byte[RECORD_SIZE];
 					byte[] bRid = new byte[RID_SIZE];
@@ -66,49 +65,170 @@ public class hashload implements dbimpl {
 					System.arraycopy(bLastPage, recOffset, bRecord, 0, RECORD_SIZE);
 					System.arraycopy(bRecord, 0, bRid, 0, RID_SIZE);
 					rid = ByteBuffer.wrap(bRid).getInt();
-					if(rid < recCount) {
+					if (rid < recCount) {
 						hasNextRecord = false;
 					} else {
 						recOffset += RECORD_SIZE;
 						recCount++;
 					}
-				} catch(ArrayIndexOutOfBoundsException e) {
+				} catch (ArrayIndexOutOfBoundsException e) {
 					hasNextRecord = false;
 				}
 			}
 		} catch (IOException e) {
 			e.printStackTrace();
 		}
-		
 		numOfRecords = (pageNum * recordsPerPage) + recCount;
 		return numOfRecords;
 	}
-	
-	public byte[] intiliazeIndex(int numOfRecords) {
+
+	public byte[] initializeIndex(int numOfBuckets) {
 		
-		int numOfBuckets = 0;
+		byte[] hashIndex = new byte[numOfBuckets * BUCKET_KEYVAL_SIZE];
+		return hashIndex;
+	}
+
+	public int calcNumOfBuckets(int numOfRecords, int idealOccupancy) {
+
+		float numOfBuckets = 0;
+		numOfBuckets = (float) numOfRecords * ((float)100/(float)idealOccupancy);
+		return (int) numOfBuckets;
+	}
+
+	public int hashKey(String searchKey, int numOfBuckets) {
+
+		int index = 0;
+		int hash = 0;
+
+		hash = searchKey.hashCode();
+		index = Math.abs(hash % numOfBuckets);
+		return index;
+	}
+
+	public int getBucketOffset(int bucketNum) {
+
+		int bucketOffset = 0;
 		
-		// try to get 70% occupancy rate;
-		numOfBuckets = (numOfRecords/7) * 100;
+		bucketOffset = bucketNum * BUCKET_KEYVAL_SIZE;
+		return bucketOffset;
+	}
+
+	public boolean isBucketFull(byte[] hashIndex, int bucketOffset) {
 		
-		return null;
+		boolean isFull = true;
+		byte[] bucketKeyVal = new byte[BUCKET_KEYVAL_SIZE];
+		byte[] emptyArray = new byte[BUCKET_KEYVAL_SIZE];
+		System.arraycopy(hashIndex, bucketOffset, bucketKeyVal, 0, BUCKET_KEYVAL_SIZE);	
+		if(Arrays.equals(bucketKeyVal, emptyArray)) {
+			isFull = false;
+		}
+		return isFull;
+	}
+
+	public byte[] storeInBucket(byte[] hashIndex, byte[] bucketKeyVal, int bucketNum, int numOfBuckets) {
+		
+		byte[] bRecName = new byte[BN_NAME_SIZE];
+		System.arraycopy(bucketKeyVal, 0, bRecName, 0, BN_NAME_SIZE);
+		boolean stored = false;
+		while (!stored) {
+			int bucketOffset = getBucketOffset(bucketNum);
+			if (isBucketFull(hashIndex, bucketOffset)) {
+				if (bucketNum == numOfBuckets - 1) {
+					bucketNum = 0;
+				} else {
+					bucketNum++;
+				}
+			} else {
+				System.arraycopy(bucketKeyVal, 0, hashIndex, bucketOffset, BUCKET_KEYVAL_SIZE);
+				stored = true;
+			}
+		}
+		return hashIndex;
 	}
 	
+	
+	public void testQuery() {
+		
+		try {
+			FileInputStream fis = null;
+			int numOfRecords = countRecords(4096, new File("heap.4096"));
+			int numOfBuckets = calcNumOfBuckets(numOfRecords, 70);
+			int bucketNum = hashKey("Easy Ute Moves", numOfBuckets);
+			while(true) {
+				fis = new FileInputStream(new File("hash.4096"));
+				fis.skip((long)(bucketNum * BUCKET_KEYVAL_SIZE));
+				byte[] keyval = new byte[BUCKET_KEYVAL_SIZE];
+				fis.read(keyval, 0, BUCKET_KEYVAL_SIZE);
+				byte[] bRecName = new byte[BN_NAME_SIZE];
+				System.arraycopy(keyval, 0, bRecName, 0, BN_NAME_SIZE);
+				String comparison = new String(bRecName).trim();
+				if(comparison.trim().equals("Easy Ute Moves")) {
+					byte[] val = new byte[HEAP_FOFFSET_SIZE];
+					System.arraycopy(keyval, BN_NAME_SIZE, val, 0, HEAP_FOFFSET_SIZE);
+					long offset = ByteBuffer.wrap(val).getLong();
+					FileInputStream fisHeap = new FileInputStream(new File("heap.4096"));
+					fisHeap.skip(offset);
+					byte[] record = new byte[RECORD_SIZE];
+					fisHeap.read(record, 0, RECORD_SIZE);
+					byte[] recordContent = new byte[RECORD_SIZE-4];
+					System.arraycopy(record, 4, recordContent, 0, RECORD_SIZE-4);
+					System.out.println(new String(recordContent).trim());
+					break;
+				} else {
+					bucketNum++;
+				}
+			}
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+	}
+	
+	public byte[] toBucketKeyVal(String recName, int pageNum, int rid, int pageSize) {
+
+		byte[] bucketKeyVal = new byte[BUCKET_KEYVAL_SIZE];
+		byte[] bRecName = new byte[BN_NAME_SIZE];
+		byte[] bRecOffset = new byte[HEAP_FOFFSET_SIZE];
+		byte[] recNameToB = null;
+		long recordOffset = (pageNum * pageSize) + (rid * RECORD_SIZE);
+		
+		bRecOffset = ByteBuffer.allocate(HEAP_FOFFSET_SIZE).putLong(recordOffset).array();
+		recNameToB = recName.getBytes();
+		System.arraycopy(recNameToB, 0, bRecName, 0, recNameToB.length);
+		/*try {
+			FileInputStream fis = new FileInputStream(new File("heap.4096"));
+			fis.skip(recordOffset);
+			byte[] record = new byte[RECORD_SIZE];
+			fis.read(record, 0, RECORD_SIZE);
+			byte[] uRecName = new byte[BN_NAME_SIZE];
+			System.arraycopy(record, BN_NAME_OFFSET, uRecName, 0, BN_NAME_SIZE);
+			byte[] brid = new byte[RID_SIZE];
+			System.arraycopy(record, 0, brid, 0, RID_SIZE);
+			int xrid = ByteBuffer.wrap(brid).getInt();
+			System.out.println(rid + ": " + recName.trim() + " " + xrid + ": " + new String(uRecName).trim());
+		} catch (IOException e) {
+			e.printStackTrace();
+		}*/
+		
+		System.arraycopy(bRecName, 0, bucketKeyVal, 0, BN_NAME_SIZE);
+		System.arraycopy(bRecOffset, 0, bucketKeyVal, BN_NAME_SIZE, HEAP_FOFFSET_SIZE);
+
+		return bucketKeyVal;
+	}
+
 	public void readHeap(int pageSize) {
 		File heapFile = new File(HEAP_FNAME + pageSize);
-		int numOfRecords = countRecords(pageSize, heapFile);
 		int pageCount = 0;
 		int recCount = 0;
 		int recordLen = 0;
 		int rid = 0;
 		int pageNum = 0;
-		int hashCode = 0;
-		int bucketNumber = 0;
-		String recordName = "";
+		int totalCount = 0;
 		boolean isNextPage = true;
 		boolean isNextRecord = true;
 		
-		numOfRecords = countRecords(pageSize, heapFile);
+		int numOfRecords = countRecords(pageSize, heapFile);
+		int numOfBuckets = calcNumOfBuckets(numOfRecords, 70);
+		byte[] hashIndex = initializeIndex(numOfBuckets);
 		
 		try {
 			FileInputStream fis = new FileInputStream(heapFile);
@@ -126,21 +246,28 @@ public class hashload implements dbimpl {
 					byte[] bRecord = new byte[RECORD_SIZE];
 					byte[] bRid = new byte[RID_SIZE];
 					byte[] bRecName = new byte[BN_NAME_SIZE];
-					String recName = "";
+ 					String recName = "";
 					try {
 						System.arraycopy(bPage, recordLen, bRecord, 0, RECORD_SIZE);
-						System.arraycopy(bRecord, BN_NAME_OFFSET, bRecName, 0, BN_NAME_SIZE);
 						System.arraycopy(bRecord, 0, bRid, 0, RID_SIZE);
+						System.arraycopy(bRecord, BN_NAME_OFFSET, bRecName, 0, BN_NAME_SIZE);
 						rid = ByteBuffer.wrap(bRid).getInt();
 						recName = new String(bRecName).trim();
-						if (rid < recCount) {
+						if (rid != recCount) {
 							isNextRecord = false;
 						} else {
-							//printRecord(bRecord, name);
+							try {
+								int bucketNum = hashKey(recName, numOfBuckets);
+								byte[] bucketKeyVal = toBucketKeyVal(recName, pageNum, rid, pageSize);
+								hashIndex = storeInBucket(hashIndex, bucketKeyVal, bucketNum, numOfBuckets);
+							} catch (Exception e) {
+								e.printStackTrace();
+							}
 							recordLen += RECORD_SIZE;
+							recCount++;
+							totalCount++;
 						}
-						recCount++;
-						// if recordLen exceeds pageSize, catch this to reset to next page
+						// if recordLen exceeds pagesize, catch this to reset to next page
 					} catch (ArrayIndexOutOfBoundsException e) {
 						isNextRecord = false;
 						recordLen = 0;
@@ -149,13 +276,35 @@ public class hashload implements dbimpl {
 					}
 				}
 				// check to complete all pages
-				if (ByteBuffer.wrap(bPageNum).getInt() != pageCount) {
+				if (pageNum != pageCount) {
 					isNextPage = false;
 				}
 				pageCount++;
 			}
 		} catch (FileNotFoundException e) {
 			System.out.println("File: " + HEAP_FNAME + pageSize + " not found.");
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+		writeToFile(hashIndex, pageSize);
+		long timenow = System.currentTimeMillis();
+		testQuery();
+		long timeend = System.currentTimeMillis();
+		System.out.println(timeend - timenow + "ms");
+	}
+
+	public void writeToFile(byte[] hashIndex, int pageSize) {
+
+		FileOutputStream fos;
+		File hashFile;
+
+		try {
+			hashFile = new File("hash." + 4096);
+			fos = new FileOutputStream(hashFile);
+			fos.write(hashIndex);
+			fos.flush();
+			fos.close();
+			System.out.println("HashFile written successfully!");
 		} catch (IOException e) {
 			e.printStackTrace();
 		}
