@@ -1,7 +1,6 @@
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
@@ -11,20 +10,27 @@ public class hashquery implements dbimpl {
 	public static void main(String[] args) {
 		hashquery query = new hashquery();
 		long startTime = System.currentTimeMillis();
-		//query.readArguments(args);
-		query.queryHash(4096, "JANSEN NEWMAN INSTITUTE");
+		query.readArguments(args);
 		long endTime = System.currentTimeMillis();
-		System.out.println("Load time: " + (endTime - startTime) + "ms.");
+		System.out.println("Query time: " + (endTime - startTime) + "ms.");
 	}
-
+	
+	// reads in arguments to check that there is a search term
+	// and valid pagesize
 	public void readArguments(String args[]) {
 		if (args.length == 2) {
-			if (isInteger(args[0])) {
-				queryHash(Integer.parseInt(args[0]), args[1].trim());
+			if (isInteger(args[1])) {
+				queryHash(args[0].trim(), Integer.parseInt(args[1]));
+			} else {
+				System.out.println("Usage: java hashquery [search_term] [page_size]");
 			}
+		} else {
+			System.out.println("Usage: java hashquery [search_term] [page_size]");
 		}
 	}
 
+	// checks to see if s can be converted
+	// to an integer
 	public boolean isInteger(String s) {
 
 		boolean isValidInt = false;
@@ -37,7 +43,9 @@ public class hashquery implements dbimpl {
 
 		return isValidInt;
 	}
-
+	
+	// calculates the number of records in heapfile based on the last
+	// pagenum and the pagesize
 	public int countRecords(int pageSize, File heapFile) {
 
 		FileInputStream fis = null;
@@ -73,26 +81,28 @@ public class hashquery implements dbimpl {
 					hasNextRecord = false;
 				}
 			}
+		} catch (FileNotFoundException e) {
+			System.out.println("File: " + heapFile.getName() + " not found.");
+			System.exit(0);
 		} catch (IOException e) {
 			e.printStackTrace();
 		}
 		numOfRecords = (pageNum * recordsPerPage) + recCount;
 		return numOfRecords;
 	}
-
-	public byte[] initializeIndex(int numOfBuckets) {
-
-		byte[] hashIndex = new byte[numOfBuckets * BUCKET_KEYVAL_SIZE];
-		return hashIndex;
-	}
-
+	
+	// calculates the number of buckets required to achieve
+	// desired occupancy. occupancy is an integer and is defined
+	// in the dbimpl interface
 	public int calcNumOfBuckets(int numOfRecords, int idealOccupancy) {
 
 		float numOfBuckets = 0;
 		numOfBuckets = (float) numOfRecords * ((float) 100 / (float) idealOccupancy);
 		return (int) numOfBuckets;
 	}
-
+	
+	// simple hash function using hashcode. returns the bucket number
+	// that the record is to be stored in by calculating mod numOfBuckets
 	public int hashKey(String searchKey, int numOfBuckets) {
 
 		int index = 0;
@@ -102,7 +112,9 @@ public class hashquery implements dbimpl {
 		index = Math.abs(hash % numOfBuckets);
 		return index;
 	}
-
+	
+	// returns the offset of a bucket in the hashindex by
+	// multiplying the bucket number with bucket size
 	public int getBucketOffset(int bucketNum) {
 
 		int bucketOffset = 0;
@@ -110,7 +122,9 @@ public class hashquery implements dbimpl {
 		bucketOffset = bucketNum * BUCKET_KEYVAL_SIZE;
 		return bucketOffset;
 	}
-
+	
+	// converts the byte[] containing the bucket key
+	// which is a string and returns it
 	public String getBucketKey(byte[] bucketKeyVal) {
 
 		String searchKey = "";
@@ -121,7 +135,9 @@ public class hashquery implements dbimpl {
 
 		return searchKey;
 	}
-
+	
+	// converts the byte[] containing the bucket val
+	// which is a long and returns it
 	public long getBucketVal(byte[] bucketKeyVal) {
 
 		long heapOffset = 0;
@@ -132,8 +148,10 @@ public class hashquery implements dbimpl {
 
 		return heapOffset;
 	}
-
-	public void queryHash(int pageSize, String searchKey) {
+	
+	// intializes the hashFile, heapFile and important variables
+	// and passes them to the linear probing function for querying
+	public void queryHash(String searchKey, int pageSize) {
 		
 		File hashFile = new File(HASH_FNAME + pageSize);
 		File heapFile = new File(HEAP_FNAME + pageSize);
@@ -143,7 +161,8 @@ public class hashquery implements dbimpl {
 		
 		linearProbe(searchKey, bucketNum, numOfBuckets, heapFile, hashFile);
 	}
-
+	
+	// checks to see if a bucket is full or not
 	public boolean bucketIsFull(int bucketNum, File hashFile) {
 
 		FileInputStream hashFis = null;
@@ -159,13 +178,20 @@ public class hashquery implements dbimpl {
 			if (Arrays.equals(emptyBucket, bucketKeyVal)) {
 				isFull = false;
 			}
+		} catch (FileNotFoundException e) {
+			System.out.println("File: " + hashFile.getName() + " not found.");
+			System.exit(0);
 		} catch (IOException e) {
 			e.printStackTrace();
 		}
 		return isFull;
 	}
-
-	public void linearProbe(String searchKey, int bucketNum, int numOfBuckets, File heapFile, File hashFile) {
+	
+	// linear probing implementation that steps through buckets to check if
+	// the key matches the searchkey and retrieves data if a match is found or
+	// terminates if the bucket found is empty
+	public void linearProbe(String searchKey, int bucketNum, int numOfBuckets, 
+			File heapFile, File hashFile) {
 
 		int originalBucketNum = bucketNum;
 		long bucketOffset = 0;
@@ -181,11 +207,15 @@ public class hashquery implements dbimpl {
 				if (bucketKey.trim().equals(searchKey)) {
 					retrieveRecord(getBucketVal(bucketKeyVal), heapFile);
 				}
+				// loops around if bucket number exceeds
+				// the total number of buckets - 1
 				if (bucketNum != numOfBuckets - 1) {
 					bucketNum++;
 				} else {
 					bucketNum = 0;
 				}
+				// if a full loop is made then terminate,
+				// there is no match/remaining matches
 				if (bucketNum == originalBucketNum) {
 					break;
 				}
@@ -194,7 +224,9 @@ public class hashquery implements dbimpl {
 			e.printStackTrace();
 		}
 	}
-
+	
+	// uses the recordoffset and the heapfile to get the
+	// record from the heapfile and print it out
 	public void retrieveRecord(long recordOffset, File heapFile) {
 
 		FileInputStream heapFis;

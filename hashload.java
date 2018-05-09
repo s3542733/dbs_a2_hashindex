@@ -11,19 +11,28 @@ public class hashload implements dbimpl {
 	public static void main(String[] args) {
 		hashload load = new hashload();
 		long startTime = System.currentTimeMillis();
-		load.readArguments(args);
+		//load.readArguments(args);
+		load.loadHash(4096);
 		long endTime = System.currentTimeMillis();
 		System.out.println("Load time: " + (endTime - startTime) + "ms.");
 	}
-
+	
+	// checks to see if pagesize argument from commandline
+	// is an integer
 	public void readArguments(String args[]) {
 		if (args.length == 1) {
 			if (isInteger(args[0])) {
-				readHeap(Integer.parseInt(args[0]));
+				loadHash(Integer.parseInt(args[0]));
+			} else {
+				System.out.println("Usage: java hashload [page_size]");
 			}
+		} else {
+			System.out.println("Usage: java hashload [page_size]");
 		}
 	}
-
+	
+	// checks to see if s can be converted to
+	// an integer
 	public boolean isInteger(String s) {
 
 		boolean isValidInt = false;
@@ -37,6 +46,8 @@ public class hashload implements dbimpl {
 		return isValidInt;
 	}
 
+	// calculates the number of records in heapfile based on the last
+	// pagenum and the pagesize
 	public int countRecords(int pageSize, File heapFile) {
 
 		FileInputStream fis = null;
@@ -79,29 +90,39 @@ public class hashload implements dbimpl {
 		return numOfRecords;
 	}
 
+	// creates an empty byte array equal to all buckets multiplied
+	// by the size of a single bucket
 	public byte[] initializeIndex(int numOfBuckets) {
 
 		byte[] hashIndex = new byte[numOfBuckets * BUCKET_KEYVAL_SIZE];
 		return hashIndex;
 	}
-
-	public int calcNumOfBuckets(int numOfRecords, int idealOccupancy) {
+	
+	// calculates the number of buckets required to achieve
+	// desired occupancy. occupancy is an integer and is defined
+	// in the dbimpl interface
+	public int calcNumOfBuckets(int numOfRecords) {
 
 		float numOfBuckets = 0;
-		numOfBuckets = (float) numOfRecords * ((float) 100 / (float) idealOccupancy);
+		numOfBuckets = (float) numOfRecords * ((float) 100 / (float) IDEAL_OCCUPANCY);
 		return (int) numOfBuckets;
 	}
 
+	// simple hash function using hashcode. returns the bucket number
+	// that the record is to be stored in by calculating mod numOfBuckets
 	public int hashKey(String searchKey, int numOfBuckets) {
 
-		int index = 0;
+		float index = 0;
 		int hash = 0;
 
 		hash = searchKey.hashCode();
 		index = Math.abs(hash % numOfBuckets);
-		return index;
+		return (int)index;
 	}
-
+	
+	
+	// returns the offset of a bucket in the hashindex by
+	// multiplying the bucket number with bucket size
 	public int getBucketOffset(int bucketNum) {
 
 		int bucketOffset = 0;
@@ -109,7 +130,9 @@ public class hashload implements dbimpl {
 		bucketOffset = bucketNum * BUCKET_KEYVAL_SIZE;
 		return bucketOffset;
 	}
-
+	
+	// checks to see if a bucket is full by comparing it with
+	// an empty bucket
 	public boolean isBucketFull(byte[] hashIndex, int bucketOffset) {
 
 		boolean isFull = true;
@@ -121,7 +144,8 @@ public class hashload implements dbimpl {
 		}
 		return isFull;
 	}
-
+	
+	// attempts to store a record in a bucket
 	public byte[] storeInBucket(byte[] hashIndex, String recName, int pageNum, int rid, int pageSize,
 			int numOfBuckets) {
 
@@ -145,7 +169,10 @@ public class hashload implements dbimpl {
 		}
 		return hashIndex;
 	}
-
+	
+	// sanity check method to make sure that all the records are stored in the hashindex
+	// prints out how many records are found against the numOfRecords. This method is
+	// called after the hashindex is written to file.
 	public void checkHashRecords(int pageSize, int numOfRecords, int numOfBuckets) {
 
 		FileInputStream fis = null;
@@ -172,7 +199,10 @@ public class hashload implements dbimpl {
 		}
 		System.out.println(recordCount + "/" + numOfRecords + " in the hashIndex.");
 	}
-
+	
+	
+	// transforms data from record into data for the bucket by calculating the
+	// record offset from rid, pageNum and pageSize
 	public byte[] toBucketKeyVal(String recName, int pageNum, int rid, int pageSize) {
 
 		byte[] bucketKeyVal = new byte[BUCKET_KEYVAL_SIZE];
@@ -190,26 +220,31 @@ public class hashload implements dbimpl {
 
 		return bucketKeyVal;
 	}
-
-	public void readHeap(int pageSize) {
+	
+	// reads every record from the heapfile and stores it into the hashindex
+	// to be written to file. this function uses 
+	public void loadHash(int pageSize) {
 		File heapFile = new File(HEAP_FNAME + pageSize);
 		int pageCount, recCount, recordLen, rid, pageNum;
 		pageCount = recCount = recordLen = rid = pageNum = 0;
 		boolean isNextPage = true;
 		boolean isNextRecord = true;
-
+		
+		// key variables for calculating bucket offsets
 		int numOfRecords = countRecords(pageSize, heapFile);
-		int numOfBuckets = calcNumOfBuckets(numOfRecords, IDEAL_OCCUPANCY);
+		int numOfBuckets = calcNumOfBuckets(numOfRecords);
+		// creates an empty byte array
 		byte[] hashIndex = initializeIndex(numOfBuckets);
-
+		
 		try {
 			FileInputStream fis = new FileInputStream(heapFile);
-			// reading page by page
+			// reading page by page from heapfile
 			while (isNextPage) {
 				byte[] bPage = new byte[pageSize];
 				byte[] bPageNum = new byte[EOF_PAGENUM_SIZE];
 				fis.read(bPage, 0, pageSize);
-				System.arraycopy(bPage, bPage.length - EOF_PAGENUM_SIZE, bPageNum, 0, EOF_PAGENUM_SIZE);
+				// store pagenum to pass to storeInBucket()
+				System.arraycopy(bPage, pageSize - EOF_PAGENUM_SIZE, bPageNum, 0, EOF_PAGENUM_SIZE);
 				pageNum = ByteBuffer.wrap(bPageNum).getInt();
 
 				// reading by record, return true to read the next record
@@ -221,7 +256,9 @@ public class hashload implements dbimpl {
 					String recName = "";
 					try {
 						System.arraycopy(bPage, recordLen, bRecord, 0, RECORD_SIZE);
+						// store rid to pass to storeInBucket()
 						System.arraycopy(bRecord, 0, bRid, 0, RID_SIZE);
+						// store recName to pass to storeInBucket()
 						System.arraycopy(bRecord, BN_NAME_OFFSET, bRecName, 0, BN_NAME_SIZE);
 						rid = ByteBuffer.wrap(bRid).getInt();
 						recName = new String(bRecName).trim();
@@ -229,6 +266,7 @@ public class hashload implements dbimpl {
 							isNextRecord = false;
 						} else {
 							try {
+								// attempts to store record in a bucket in hashIndex
 								hashIndex = storeInBucket(hashIndex, recName, pageNum, rid, pageSize, numOfBuckets);
 							} catch (Exception e) {
 								e.printStackTrace();
@@ -248,17 +286,23 @@ public class hashload implements dbimpl {
 				}
 				pageCount++;
 			}
+			fis.close();
+			
+			// writes hashindex to a file
 			hashIndexToFile(hashIndex, pageSize);
+			
 			// Uncomment to check if all records have been loaded into hashFile
 			// properly.
 			// checkHashRecords(pageSize, numOfRecords, numOfBuckets);
+		
 		} catch (FileNotFoundException e) {
-			System.out.println("File: " + HEAP_FNAME + pageSize + " not found.");
+			System.out.println("File: " + heapFile.getName() + " not found.");
 		} catch (IOException e) {
 			e.printStackTrace();
 		}
 	}
 
+	// writes hashindex to a file
 	public void hashIndexToFile(byte[] hashIndex, int pageSize) {
 
 		FileOutputStream fos;
