@@ -11,8 +11,7 @@ public class hashload implements dbimpl {
 	public static void main(String[] args) {
 		hashload load = new hashload();
 		long startTime = System.currentTimeMillis();
-		//load.readArguments(args);
-		load.loadHash(4096);
+		load.readArguments(args);
 		long endTime = System.currentTimeMillis();
 		System.out.println("Load time: " + (endTime - startTime) + "ms.");
 	}
@@ -94,7 +93,7 @@ public class hashload implements dbimpl {
 	// by the size of a single bucket
 	public byte[] initializeIndex(int numOfBuckets) {
 
-		byte[] hashIndex = new byte[numOfBuckets * BUCKET_KEYVAL_SIZE];
+		byte[] hashIndex = new byte[numOfBuckets * BUCKET_VAL_SIZE];
 		return hashIndex;
 	}
 	
@@ -127,7 +126,7 @@ public class hashload implements dbimpl {
 
 		int bucketOffset = 0;
 
-		bucketOffset = bucketNum * BUCKET_KEYVAL_SIZE;
+		bucketOffset = bucketNum * BUCKET_VAL_SIZE;
 		return bucketOffset;
 	}
 	
@@ -136,10 +135,10 @@ public class hashload implements dbimpl {
 	public boolean isBucketFull(byte[] hashIndex, int bucketOffset) {
 
 		boolean isFull = true;
-		byte[] bucketKeyVal = new byte[BUCKET_KEYVAL_SIZE];
-		byte[] emptyBucket = new byte[BUCKET_KEYVAL_SIZE];
-		System.arraycopy(hashIndex, bucketOffset, bucketKeyVal, 0, BUCKET_KEYVAL_SIZE);
-		if (Arrays.equals(bucketKeyVal, emptyBucket)) {
+		byte[] bucketVal = new byte[BUCKET_VAL_SIZE];
+		byte[] emptyBucket = new byte[BUCKET_VAL_SIZE];
+		System.arraycopy(hashIndex, bucketOffset, bucketVal, 0, BUCKET_VAL_SIZE);
+		if (Arrays.equals(bucketVal, emptyBucket)) {
 			isFull = false;
 		}
 		return isFull;
@@ -149,10 +148,8 @@ public class hashload implements dbimpl {
 	public byte[] storeInBucket(byte[] hashIndex, String recName, int pageNum, int rid, int pageSize,
 			int numOfBuckets) {
 
-		byte[] bRecName = new byte[BN_NAME_SIZE];
 		int bucketNum = hashKey(recName, numOfBuckets);
-		byte[] bucketKeyVal = toBucketKeyVal(recName, pageNum, rid, pageSize);
-		System.arraycopy(bucketKeyVal, 0, bRecName, 0, BN_NAME_SIZE);
+		byte[] bucketVal = tobucketVal( pageNum, rid, pageSize);
 		boolean stored = false;
 		while (!stored) {
 			int bucketOffset = getBucketOffset(bucketNum);
@@ -163,7 +160,7 @@ public class hashload implements dbimpl {
 					bucketNum++;
 				}
 			} else {
-				System.arraycopy(bucketKeyVal, 0, hashIndex, bucketOffset, BUCKET_KEYVAL_SIZE);
+				System.arraycopy(bucketVal, 0, hashIndex, bucketOffset, BUCKET_VAL_SIZE);
 				stored = true;
 			}
 		}
@@ -178,19 +175,19 @@ public class hashload implements dbimpl {
 		FileInputStream fis = null;
 		int recordCount = 0;
 		boolean eof = false;
-		byte[] emptybucket = new byte[BUCKET_KEYVAL_SIZE];
-		byte[] hashIndex = new byte[numOfBuckets * BUCKET_KEYVAL_SIZE];
+		byte[] emptybucket = new byte[BUCKET_VAL_SIZE];
+		byte[] hashIndex = new byte[numOfBuckets * BUCKET_VAL_SIZE];
 		try {
 			fis = new FileInputStream(new File(HASH_FNAME + pageSize));
-			byte[] keyval = new byte[BUCKET_KEYVAL_SIZE];
-			fis.read(hashIndex, 0, numOfBuckets * BUCKET_KEYVAL_SIZE);
+			byte[] keyval = new byte[BUCKET_VAL_SIZE];
+			fis.read(hashIndex, 0, numOfBuckets * BUCKET_VAL_SIZE);
 			int offset = 0;
 			while (!eof) {
-				System.arraycopy(hashIndex, offset, keyval, 0, BUCKET_KEYVAL_SIZE);
+				System.arraycopy(hashIndex, offset, keyval, 0, BUCKET_VAL_SIZE);
 				if (!Arrays.equals(keyval, emptybucket)) {
 					recordCount++;
 				}
-				offset += BUCKET_KEYVAL_SIZE;
+				offset += BUCKET_VAL_SIZE;
 			}
 		} catch (ArrayIndexOutOfBoundsException e) {
 			eof = true;
@@ -203,22 +200,20 @@ public class hashload implements dbimpl {
 	
 	// transforms data from record into data for the bucket by calculating the
 	// record offset from rid, pageNum and pageSize
-	public byte[] toBucketKeyVal(String recName, int pageNum, int rid, int pageSize) {
+	public byte[] tobucketVal(int pageNum, int rid, int pageSize) {
 
-		byte[] bucketKeyVal = new byte[BUCKET_KEYVAL_SIZE];
-		byte[] bRecName = new byte[BN_NAME_SIZE];
+		byte[] bucketVal = new byte[BUCKET_VAL_SIZE];
+		byte[] bBufferChar = new byte[BUFFER_CHARACTER_SIZE];
 		byte[] bRecOffset = new byte[HEAP_FOFFSET_SIZE];
-		byte[] recNameToB = null;
-		long recordOffset = (pageNum * pageSize) + (rid * RECORD_SIZE);
+		int recordOffset = (pageNum * pageSize) + (rid * RECORD_SIZE);
+		
+		bBufferChar = BUFFER_CHARACTER.getBytes();
+		bRecOffset = ByteBuffer.allocate(HEAP_FOFFSET_SIZE).putInt(recordOffset).array();
+		
+		System.arraycopy(bBufferChar, 0, bucketVal, 0, BUFFER_CHARACTER_SIZE);
+		System.arraycopy(bRecOffset, 0, bucketVal, BUFFER_CHARACTER_SIZE, HEAP_FOFFSET_SIZE);
 
-		bRecOffset = ByteBuffer.allocate(HEAP_FOFFSET_SIZE).putLong(recordOffset).array();
-		recNameToB = recName.getBytes();
-		System.arraycopy(recNameToB, 0, bRecName, 0, recNameToB.length);
-
-		System.arraycopy(bRecName, 0, bucketKeyVal, 0, BN_NAME_SIZE);
-		System.arraycopy(bRecOffset, 0, bucketKeyVal, BN_NAME_SIZE, HEAP_FOFFSET_SIZE);
-
-		return bucketKeyVal;
+		return bucketVal;
 	}
 	
 	// reads every record from the heapfile and stores it into the hashindex
@@ -293,7 +288,7 @@ public class hashload implements dbimpl {
 			
 			// Uncomment to check if all records have been loaded into hashFile
 			// properly.
-			// checkHashRecords(pageSize, numOfRecords, numOfBuckets);
+			checkHashRecords(pageSize, numOfRecords, numOfBuckets);
 		
 		} catch (FileNotFoundException e) {
 			System.out.println("File: " + heapFile.getName() + " not found.");

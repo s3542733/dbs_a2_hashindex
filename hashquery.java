@@ -119,32 +119,19 @@ public class hashquery implements dbimpl {
 
 		int bucketOffset = 0;
 
-		bucketOffset = bucketNum * BUCKET_KEYVAL_SIZE;
+		bucketOffset = bucketNum * BUCKET_VAL_SIZE;
 		return bucketOffset;
 	}
-	
-	// converts the byte[] containing the bucket key
-	// which is a string and returns it
-	public String getBucketKey(byte[] bucketKeyVal) {
-
-		String searchKey = "";
-		byte[] bRecName = new byte[BN_NAME_SIZE];
-
-		System.arraycopy(bucketKeyVal, 0, bRecName, 0, BN_NAME_SIZE);
-		searchKey = new String(bRecName);
-
-		return searchKey;
-	}
-	
+		
 	// converts the byte[] containing the bucket val
 	// which is a long and returns it
-	public long getBucketVal(byte[] bucketKeyVal) {
+	public int getBucketVal(byte[] bucketVal) {
 
-		long heapOffset = 0;
+		int heapOffset = 0;
 		byte[] bHeapOffset = new byte[HEAP_FOFFSET_SIZE];
 
-		System.arraycopy(bucketKeyVal, BN_NAME_SIZE, bHeapOffset, 0, HEAP_FOFFSET_SIZE);
-		heapOffset = ByteBuffer.wrap(bHeapOffset).getLong();
+		System.arraycopy(bucketVal, BUFFER_CHARACTER_SIZE, bHeapOffset, 0, HEAP_FOFFSET_SIZE);
+		heapOffset = ByteBuffer.wrap(bHeapOffset).getInt();
 
 		return heapOffset;
 	}
@@ -166,16 +153,16 @@ public class hashquery implements dbimpl {
 	public boolean bucketIsFull(int bucketNum, File hashFile) {
 
 		FileInputStream hashFis = null;
-		long bucketOffset = 0;
+		int bucketOffset = 0;
 		boolean isFull = true;
-		byte[] emptyBucket = new byte[BUCKET_KEYVAL_SIZE];
+		byte[] emptyBucket = new byte[BUCKET_VAL_SIZE];
 		try {
 			bucketOffset = getBucketOffset(bucketNum);
 			hashFis = new FileInputStream(hashFile);
 			hashFis.skip((long) bucketOffset);
-			byte[] bucketKeyVal = new byte[BUCKET_KEYVAL_SIZE];
-			hashFis.read(bucketKeyVal, 0, BUCKET_KEYVAL_SIZE);
-			if (Arrays.equals(emptyBucket, bucketKeyVal)) {
+			byte[] bucketVal = new byte[BUCKET_VAL_SIZE];
+			hashFis.read(bucketVal, 0, BUCKET_VAL_SIZE);
+			if (Arrays.equals(emptyBucket, bucketVal)) {
 				isFull = false;
 			}
 		} catch (FileNotFoundException e) {
@@ -194,19 +181,16 @@ public class hashquery implements dbimpl {
 			File heapFile, File hashFile) {
 
 		int originalBucketNum = bucketNum;
-		long bucketOffset = 0;
+		int bucketOffset = 0;
 		FileInputStream hashFis = null;
 		try {
 			while (bucketIsFull(bucketNum, hashFile)) {
-				byte[] bucketKeyVal = new byte[BUCKET_KEYVAL_SIZE];
+				byte[] bucketVal = new byte[BUCKET_VAL_SIZE];
 				bucketOffset = getBucketOffset(bucketNum);
 				hashFis = new FileInputStream(hashFile);
 				hashFis.skip((long) bucketOffset);
-				hashFis.read(bucketKeyVal, 0, BUCKET_KEYVAL_SIZE);
-				String bucketKey = getBucketKey(bucketKeyVal);
-				if (bucketKey.trim().equals(searchKey)) {
-					retrieveRecord(getBucketVal(bucketKeyVal), heapFile);
-				}
+				hashFis.read(bucketVal, 0, BUCKET_VAL_SIZE);
+				retrieveRecord(searchKey, getBucketVal(bucketVal), heapFile);
 				// loops around if bucket number exceeds
 				// the total number of buckets - 1
 				if (bucketNum != numOfBuckets - 1) {
@@ -227,17 +211,21 @@ public class hashquery implements dbimpl {
 	
 	// uses the recordoffset and the heapfile to get the
 	// record from the heapfile and print it out
-	public void retrieveRecord(long recordOffset, File heapFile) {
+	public void retrieveRecord(String searchKey, long recordOffset, File heapFile) {
 
 		FileInputStream heapFis;
 		byte[] bRecord = new byte[RECORD_SIZE];
 		byte[] bRecordContents = new byte[RECORD_SIZE - RID_SIZE];
+		byte[] bRecName = new byte[BN_NAME_SIZE];
 		try {
 			heapFis = new FileInputStream(heapFile);
 			heapFis.skip(recordOffset);
 			heapFis.read(bRecord, 0, RECORD_SIZE);
-			System.arraycopy(bRecord, RID_SIZE, bRecordContents, 0, RECORD_SIZE - RID_SIZE);
-			System.out.println(new String(bRecordContents));
+			System.arraycopy(bRecord, BN_NAME_OFFSET, bRecName, 0, BN_NAME_SIZE);
+			if(new String(bRecName).trim().equals(searchKey)) {
+				System.arraycopy(bRecord, RID_SIZE, bRecordContents, 0, RECORD_SIZE - RID_SIZE);
+				System.out.println(new String(bRecordContents));
+			}
 		} catch (IOException e) {
 			e.printStackTrace();
 		}

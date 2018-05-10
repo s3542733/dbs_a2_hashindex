@@ -21,13 +21,18 @@ public interface dbimpl {
 	public static final int BN_STATE_OF_REG_SIZE = 3;
 	public static final int BN_ABN_SIZE = 20;
 	public static final int EOF_PAGENUM_SIZE = 4;
-	
-	// to prevent OutOfMemoryErrors keep 
+
+	// to prevent OutOfMemoryErrors keep
 	// IDEAL_OCCUPANCY >= 40
 	public static final int IDEAL_OCCUPANCY = 70;
 
-	public static final int HEAP_FOFFSET_SIZE = 8;
-	public static final int BUCKET_KEYVAL_SIZE = BN_NAME_SIZE + HEAP_FOFFSET_SIZE;
+	// public static final int HEAP_FOFFSET_SIZE = 8;
+	// public static final int BUCKET_KEYVAL_SIZE = BN_NAME_SIZE + HEAP_FOFFSET_SIZE;
+
+	public static final int HEAP_FOFFSET_SIZE = 4;
+	public static final String BUFFER_CHARACTER = "B";
+	public static final int BUFFER_CHARACTER_SIZE = 1;
+	public static final int BUCKET_VAL_SIZE =  BUFFER_CHARACTER_SIZE + HEAP_FOFFSET_SIZE;
 	
 	public static final int BN_NAME_OFFSET = RID_SIZE + REGISTER_NAME_SIZE;
 
