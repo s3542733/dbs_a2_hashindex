@@ -288,7 +288,7 @@ public class hashload implements dbimpl {
 			
 			// Uncomment to check if all records have been loaded into hashFile
 			// properly.
-			checkHashRecords(pageSize, numOfRecords, numOfBuckets);
+			//checkHashRecords(pageSize, numOfRecords, numOfBuckets);
 		
 		} catch (FileNotFoundException e) {
 			System.out.println("File: " + heapFile.getName() + " not found.");
