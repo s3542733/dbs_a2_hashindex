@@ -69,6 +69,8 @@ public class hashload implements dbimpl {
 					byte[] bRecord = new byte[RECORD_SIZE];
 					byte[] bRid = new byte[RID_SIZE];
 					int rid = 0;
+					// copy record size array from last page to check if it is a 
+					// record or not
 					System.arraycopy(bLastPage, recOffset, bRecord, 0, RECORD_SIZE);
 					System.arraycopy(bRecord, 0, bRid, 0, RID_SIZE);
 					rid = ByteBuffer.wrap(bRid).getInt();
@@ -153,6 +155,7 @@ public class hashload implements dbimpl {
 		boolean stored = false;
 		while (!stored) {
 			int bucketOffset = getBucketOffset(bucketNum);
+			// linear probing implementation
 			if (isBucketFull(hashIndex, bucketOffset)) {
 				if (bucketNum == numOfBuckets - 1) {
 					bucketNum = 0;

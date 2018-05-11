@@ -26,9 +26,6 @@ public interface dbimpl {
 	// IDEAL_OCCUPANCY >= 40
 	public static final int IDEAL_OCCUPANCY = 70;
 
-	// public static final int HEAP_FOFFSET_SIZE = 8;
-	// public static final int BUCKET_KEYVAL_SIZE = BN_NAME_SIZE + HEAP_FOFFSET_SIZE;
-
 	public static final int HEAP_FOFFSET_SIZE = 4;
 	public static final String BUFFER_CHARACTER = "B";
 	public static final int BUFFER_CHARACTER_SIZE = 1;

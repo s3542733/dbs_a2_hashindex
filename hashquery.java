@@ -124,7 +124,7 @@ public class hashquery implements dbimpl {
 	}
 		
 	// converts the byte[] containing the bucket val
-	// which is a long and returns it
+	// which is an int and returns it
 	public int getBucketVal(byte[] bucketVal) {
 
 		int heapOffset = 0;
